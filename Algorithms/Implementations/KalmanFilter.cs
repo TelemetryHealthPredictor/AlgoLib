@@ -47,26 +47,15 @@ namespace AlgoLib.Algorithms.Implementations
         private Matrix<double> _Hk = null!, _R_prev_k = null!, _Qk = null!, _Sk = null!, _Kk = null!;
         private Vector<double> _Yk = null!, _Zk = null!;
 
-
-        private const int LogInterval = 1000;
-
-        private readonly string[] _parameterNames;
-
-        // ---- Z-score statistics, reset by Init ----
-        private int _zScoreCallCount;
-        private int[] _zStatCounts = [];
-        private double[] _zStatMeans = [];
-        private double[] _zStatM2 = [];
-
         public KalmanFilter(NamingData namingData)
         {
-            _parameterNames = namingData.ParameterNames;
-            _stateVariableCount = _parameterNames.Length;
+            string[] parameterNames = namingData.ParameterNames;
+            _stateVariableCount = parameterNames.Length;
 
             _parameterIndices = [];
-            for (int i = 0; i < _parameterNames.Length; i++)
+            for (int i = 0; i < parameterNames.Length; i++)
             {
-                _parameterIndices[_parameterNames[i]] = i;
+                _parameterIndices[parameterNames[i]] = i;
             }
 
             _Fk = Matrix<double>.Build.DenseIdentity(_stateVariableCount);
@@ -95,11 +84,6 @@ namespace AlgoLib.Algorithms.Implementations
             _hasStartTimestamp = false;
 
             _stage = Stage.None;
-
-            _zScoreCallCount = 0;
-            _zStatCounts = new int[_stateVariableCount];
-            _zStatMeans = new double[_stateVariableCount];
-            _zStatM2 = new double[_stateVariableCount];
 
             _isInitialized = true;
         }
@@ -212,18 +196,6 @@ namespace AlgoLib.Algorithms.Implementations
 
             if (!IsStabilized())
                 return null;
-
-            // Only the z-scores refreshed this step are accumulated, so stale values are not double counted
-            for (int i = 0; i < _indicesInBatch.Length; i++)
-            {
-                AccumulateZScore(_indicesInBatch[i], newZScores[i]);
-            }
-
-            _zScoreCallCount++;
-            if (_zScoreCallCount % LogInterval == 0)
-            {
-                LogZScoreStats();
-            }
 
             if (_Z_scores.Any(double.IsNaN))
             {
@@ -343,29 +315,6 @@ namespace AlgoLib.Algorithms.Implementations
         private bool AllParametersMeasured()
         {
             return !_Xk.Any(double.IsNaN);
-        }
-
-        // Welford's online algorithm: numerically stable running mean and variance
-        private void AccumulateZScore(int stateVariableIndex, double z)
-        {
-            _zStatCounts[stateVariableIndex]++;
-            double delta = z - _zStatMeans[stateVariableIndex];
-            _zStatMeans[stateVariableIndex] += delta / _zStatCounts[stateVariableIndex];
-            _zStatM2[stateVariableIndex] += delta * (z - _zStatMeans[stateVariableIndex]);
-        }
-
-        private void LogZScoreStats()
-        {
-            Console.WriteLine($"[KalmanFilter] Z-score statistics after {_zScoreCallCount} computations:");
-
-            for (int i = 0; i < _stateVariableCount; i++)
-            {
-                int count = _zStatCounts[i];
-                double mean = count > 0 ? _zStatMeans[i] : double.NaN;
-                double stdDev = count > 1 ? Math.Sqrt(_zStatM2[i] / (count - 1)) : double.NaN; // sample standard deviation
-
-                Console.WriteLine($"  {_parameterNames[i]}: mean = {mean:F4}, stdDev = {stdDev:F4}, n = {count}");
-            }
         }
     }
 }
