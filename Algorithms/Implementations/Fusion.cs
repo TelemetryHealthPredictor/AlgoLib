@@ -2,31 +2,33 @@
 using AlgoLib.Data.Result_Objects;
 using AlgoLib.Utilities;
 
-namespace TelemetryHealthPredictor.Algorithm.Delegates.Implementations
+namespace AlgoLib.Algorithms.Implementations
 {
     public class Fusion : IFusion
     {
         private const double MaxScore = 100.0;
         private const double MinScore = 1.0;
 
-        private readonly AnchorLadder _cusumLadder;
-        private readonly AnchorLadder _d2Ladder;
+        // ---- Baseline, set by Init ----
+        private bool _isInitialized;
+        private AnchorLadder _cusumLadder = null!;
+        private AnchorLadder _d2Ladder = null!;
+        private double _d2Weight;
+        private double _tDecay;
+        private double _hysteresisEntryValue, _hysteresisExitValue;
 
-        private readonly double _d2Weight;
-        private readonly double _tDecay;
-        private readonly double _hysteresisEntryValue, _hysteresisExitValue;
-
-        // State carried between frames.
+        // ---- State carried between frames, reset by Init ----
         private double _decayedHealthScore = MaxScore;
         private bool _inAlert;
 
-        /// <param name="cusumLevels">
+        /// <summary>Sets the baseline values and resets the fusion as if it never ran.</summary>
+        /// <param name="cusumThresholds">
         /// A list of levels for CUSUM Raw.
         /// Each one represents how often it will be at that value or higher.
         /// Index 0 - the value that is exceeded 100% of the time in the dataset.
         /// Index 1 - the value that is exceeded 10% of the time in the dataset, etc.
         /// </param>
-        /// <param name="d2Levels">
+        /// <param name="d2Thresholds">
         /// A list of levels for Mahalanobis Distance squared.
         /// Each one represents how often it will be at that value or higher.
         /// Index 0 - the value that is exceeded 100% of the time in the dataset.
@@ -49,26 +51,38 @@ namespace TelemetryHealthPredictor.Algorithm.Delegates.Implementations
         /// <param name="hysteresisExitValue">
         /// Health score needs to go back above ExitValue to stop constituting an alert.
         /// </param>
-        public Fusion
+        public void Init
         (
-            double[] cusumLevels,
-            double[] d2Levels,
-            double d2Weight,
+            double[] cusumThresholds,
+            double[] d2Thresholds,
+            double d2Weight, // 1 - CUSUM weight
             double tDecay,
             double hysteresisEntryValue,
             double hysteresisExitValue
         )
         {
-            _cusumLadder = new AnchorLadder(cusumLevels);
-            _d2Ladder = new AnchorLadder(d2Levels);
+            if (cusumThresholds.Length != d2Thresholds.Length)
+                throw new ArgumentException(
+                    $"{nameof(cusumThresholds)} ({cusumThresholds.Length}) and {nameof(d2Thresholds)} ({d2Thresholds.Length}) must be the same length.");
+
+            _cusumLadder = new AnchorLadder(cusumThresholds);
+            _d2Ladder = new AnchorLadder(d2Thresholds);
             _d2Weight = d2Weight;
             _tDecay = tDecay;
             _hysteresisEntryValue = hysteresisEntryValue;
             _hysteresisExitValue = hysteresisExitValue;
+
+            _decayedHealthScore = MaxScore;
+            _inAlert = false;
+
+            _isInitialized = true;
         }
 
         public AlgorithmResult FusionDelegate(Tuple<MahalanobisResult, CusumResult> combinedResult)
         {
+            if (!_isInitialized)
+                throw new InvalidOperationException($"{nameof(Init)} must be called first.");
+
             MahalanobisResult mahalanobis = combinedResult.Item1;
             CusumResult cusum = combinedResult.Item2;
 
